@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>MindChip</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0e0f13" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<style>
+  :root{ --bg:#0e0f13; --panel:#141724; --surface:#181c2e; --ink:#f1f4ff; --muted:#a3acc6;
+    --accent:#6ea8ff; --accent-2:#9b7bff; --border:#252a42; --chip:#1c2136;
+    --radius:14px; --blur:10px; --speed:.22s; --spring:cubic-bezier(.18,.89,.32,1.28); }
+  *{box-sizing:border-box} html,body{height:100%}
+  body{
+    margin:0; font-family:-apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif; color:var(--ink);
+    background:
+      radial-gradient(1200px 1200px at 20% 10%, rgba(110,168,255,.10), transparent 60%),
+      radial-gradient(1400px 1200px at 90% 0%, rgba(155,123,255,.10), transparent 65%),
+      var(--bg);
+    -webkit-font-smoothing:antialiased;
+  }
+  header{position:sticky; top:0; z-index:10; padding:10px 12px; display:flex; gap:10px; align-items:center;
+    backdrop-filter:saturate(1.15) blur(var(--blur));
+    background:linear-gradient(180deg, rgba(14,15,19,.85), rgba(14,15,19,.65));
+    border-bottom:1px solid var(--border);}
+  .logo{width:28px; height:28px; border-radius:9px; background:linear-gradient(135deg, var(--accent), var(--accent-2));
+    display:grid; place-items:center; font-weight:800; color:#0c0d11; letter-spacing:.2px;}
+  .brand{font-weight:700} .spacer{flex:1}
+  .btn{background:var(--surface); border:1px solid var(--border); color:var(--ink);
+    padding:8px 10px; border-radius:12px; font-size:14px; display:inline-flex; gap:6px; align-items:center;}
+  .btn:active{transform:translateY(1px) scale(.98)}
+  #suggestions{position:sticky; top:54px; z-index:9; padding:8px 12px; display:flex; gap:8px; overflow-x:auto;
+    border-bottom:1px solid var(--border); background:linear-gradient(180deg, rgba(14,15,19,.80), rgba(14,15,19,.55));
+    backdrop-filter:saturate(1.1) blur(var(--blur));}
+  .chip{background:var(--chip); color:var(--ink); border:1px solid var(--border); padding:8px 12px; border-radius:999px; font-size:13px; white-space:nowrap;}
+  #editorWrap{padding:14px 14px 120px}
+  #titleBar{font-size:12px; color:var(--muted); margin:6px 2px 10px}
+  #editor{width:100%; min-height:60dvh; border:0; outline:0; resize:none; background:transparent; color:var(--ink);
+    line-height:1.55; font-size:17px; caret-color:#6ea8ff;}
+  #tools{position:sticky; bottom:0; z-index:10; padding:10px 10px calc(10px + env(safe-area-inset-bottom))}
+  .dock{display:grid; grid-template-columns:repeat(8,1fr); gap:8px; background:rgba(24,28,46,.7);
+    border:1px solid var(--border); border-radius:16px; padding:10px; backdrop-filter:saturate(1.2) blur(var(--blur));}
+  .tool{appearance:none; border:1px solid var(--border); background:linear-gradient(180deg, #1b2040, #151a31);
+    color:var(--ink); padding:10px 8px; border-radius:12px; font-size:12px; text-align:center;}
+  .wide{grid-column:span 2}
+  dialog{ border:1px solid var(--border); background:rgba(20,23,36,.95); color:var(--ink); border-radius:16px; width:min(540px,92vw); }
+  dialog::backdrop{background:rgba(0,0,0,.55)} .list{max-height:60vh; overflow:auto}
+  .row{padding:14px; border-bottom:1px solid var(--border)} .row small{color:var(--muted); display:block}
+  .row strong{display:block; margin-bottom:4px}
+  ::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo">M</div>
+    <div class="brand">MindChip</div>
+    <div id="titleBar" class="spacer">New note</div>
+    <button class="btn" id="btnAll">All</button>
+    <button class="btn" id="btnNew">New</button>
+    <button class="btn" id="btnShare">Share</button>
+  </header>
+
+  <div id="suggestions" aria-label="Phrase suggestions"></div>
+
+  <main id="editorWrap">
+    <textarea id="editor" placeholder="Type here. Use the dock for H1, H2, bullets, numbers, to-dos."></textarea>
+  </main>
+
+  <section id="tools">
+    <div class="dock">
+      <button class="tool" data-act="h1"><strong>H1</strong></button>
+      <button class="tool" data-act="h2"><strong>H2</strong></button>
+      <button class="tool" data-act="body">Body</button>
+      <button class="tool" data-act="bullets">• List</button>
+      <button class="tool" data-act="numbers">1. List</button>
+      <button class="tool" data-act="todo">To-Do</button>
+      <button class="tool" data-act="indent">Indent</button>
+      <button class="tool" data-act="outdent">Outdent</button>
+      <button class="tool wide" data-act="stamp">Time</button>
+      <button class="tool wide" data-act="date">Date</button>
+      <button class="tool wide" data-act="clearline">Clear line</button>
+      <button class="tool wide" data-act="focus">Focus</button>
+    </div>
+  </section>
+
+  <dialog id="notesModal">
+    <div class="list" id="notesList"></div>
+    <div style="display:flex; justify-content:space-between; gap:8px; padding:10px">
+      <button class="btn" id="deleteNote" style="border-color:#d9534f; color:#fbd3d2; background:transparent">Delete note</button>
+      <button class="btn" id="closeModal">Close</button>
+    </div>
+  </dialog>
+
+<script>
+  const LS_CUR = 'mc_current_note';
+  const LS_LIST = 'mc_notes';
+  const $ = s => document.querySelector(s);
+  const editor = $('#editor');
+  const titleBar = $('#titleBar');
+  const sugg = $('#suggestions');
+  let currentId = null, saveTimer = null, focusMode = false;
+
+  const phraseBank = [
+    "Key takeaway:", "Action item:", "Why it matters:", "Example:", "Counterpoint:",
+    "Next steps:", "Open question:", "In summary:", "Pros:", "Cons:", "Framework:",
+    "Definition:", "Hypothesis:", "Evidence:", "Risk:", "Mitigation:", "I should test",
+    "This implies", "Remember to", "My note:"
+  ];
+
+  init();
+
+  function init(){
+    const cached = JSON.parse(localStorage.getItem(LS_CUR) || 'null');
+    if (cached && typeof cached === 'object'){ currentId = cached.id || makeId(); editor.value = cached.content || ''; }
+    else { currentId = makeId(); editor.value = ''; }
+    refreshTitle(); renderSuggestions(); wire(); editor.focus(); setInterval(shadowSave, 3000);
+    if ('serviceWorker' in navigator){ navigator.serviceWorker.register('./service-worker.js').catch(()=>{}); }
+  }
+
+  function wire(){
+    $('#btnNew').addEventListener('click', onNewNote);
+    $('#btnShare').addEventListener('click', onShare);
+    $('#btnAll').addEventListener('click', openNotes);
+    $('#closeModal').addEventListener('click', () => $('#notesModal').close());
+    $('#deleteNote').addEventListener('click', onDeleteNote);
+    document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', onTool));
+    editor.addEventListener('input', onEdit);
+    editor.addEventListener('keydown', autoListContinuation);
+    window.addEventListener('beforeunload', persistCurrent);
+  }
+
+  function makeId(){ return 'n_' + Math.random().toString(36).slice(2,10); }
+  function onEdit(){ refreshTitle(); renderSuggestions(); scheduleSave(); }
+  function scheduleSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(persistCurrent, 350); }
+
+  function persistCurrent(){
+    const note = { id: currentId, content: editor.value, updatedAt: Date.now() };
+    localStorage.setItem(LS_CUR, JSON.stringify(note));
+    const list = JSON.parse(localStorage.getItem(LS_LIST) || '[]');
+    const title = firstNonEmptyLine(editor.value).slice(0,80) || 'Untitled';
+    const idx = list.findIndex(x => x.id === currentId);
+    const meta = { id: currentId, title, updatedAt: note.updatedAt };
+    if (idx >= 0) list[idx] = meta; else list.unshift(meta);
+    localStorage.setItem(LS_LIST, JSON.stringify(list));
+  }
+
+  function firstNonEmptyLine(t){ const l=(t||'').split(/\r?\n/).find(x=>x.trim().length); return l ? l.trim() : ''; }
+  function refreshTitle(){ const t = firstNonEmptyLine(editor.value); titleBar.textContent = t || 'New note'; }
+
+  function onTool(e){
+    const act = e.currentTarget.dataset.act;
+    const map = {
+      h1: () => setHeading(1),
+      h2: () => setHeading(2),
+      body: () => setBody(),
+      bullets: () => toggleBullets(),
+      numbers: () => toggleNumbers(),
+      todo: () => toggleTodo(),
+      indent: () => indentLines(2),
+      outdent: () => indentLines(-2),
+      stamp: () => insertAtCursor(new Date().toLocaleTimeString()),
+      date: () => insertAtCursor(new Date().toLocaleDateString()),
+      clearline: () => clearCurrentLine(),
+      focus: () => toggleFocus()
+    };
+    map[act] && map[act]();
+    scheduleSave();
+  }
+
+  function toggleFocus(){
+    focusMode = !focusMode;
+    if (focusMode){
+      document.body.style.background = 'radial-gradient(1200px 1200px at 50% -10%, rgba(110,168,255,.12), transparent 60%), var(--bg)';
+      editor.style.outline = '2px solid rgba(110,168,255,.35)';
+      editor.style.background = 'rgba(24,28,46,.35)';
+      editor.style.borderRadius = '14px';
+    } else {
+      document.body.style.background =
+        'radial-gradient(1200px 1200px at 20% 10%, rgba(110,168,255,.10), transparent 60%),'+
+        'radial-gradient(1400px 1200px at 90% 0%, rgba(155,123,255,.10), transparent 65%), var(--bg)';
+      editor.style.outline = 'none';
+      editor.style.background = 'transparent';
+    }
+  }
+
+  function getSel(){ const s=editor.selectionStart, e=editor.selectionEnd, t=editor.value; return {s,e,t,pre:t.slice(0,s),sel:t.slice(s,e),post:t.slice(e)} }
+  function setSel(v, caret=null){ const {pre,post}=getSel(); editor.value=pre+v+post; const pos=pre.length+(caret==null?v.length:caret); editor.setSelectionRange(pos,pos); onEdit(); }
+
+  function getLines(){ const {s,e,t}=getSel(); const ls=t.lastIndexOf('\\n', Math.max(0,s-1))+1; const le=t.indexOf('\\n',e);
+    const to=le===-1?t.length:le; return {ls, le:to, block:t.slice(ls,to), t, s, e}; }
+
+  function setHeading(n){
+    const {ls, le, block, t} = getLines();
+    const cleaned = block.split('\\n').map(l => l.replace(/^\\s{0,4}#{1,6}\\s+/,'').trim()).join('\\n');
+    const prefix = '#'.repeat(n)+' ';
+    const out = cleaned.split('\\n').map((l,i)=> i===0 ? prefix + l : l).join('\\n');
+    editor.value = t.slice(0,ls) + out + t.slice(le);
+    editor.setSelectionRange(ls + prefix.length, ls + out.length); onEdit();
+  }
+
+  function setBody(){
+    const {ls, le, block, t} = getLines();
+    const out = block.split('\\n').map(l =>
+      l.replace(/^\\s{0,4}#{1,6}\\s+/,'')
+       .replace(/^\\s*-\\s+/,'')
+       .replace(/^\\s*\\d+\\.\\s+/,'')
+       .replace(/^\\s*\\[(?:\\s|\\u2713)\\]\\s+/, '')
+    ).join('\\n');
+    editor.value = t.slice(0,ls) + out + t.slice(le);
+    editor.setSelectionRange(ls, ls + out.length); onEdit();
+  }
+
+  function toggleBullets(){
+    const {ls, le, block, t} = getLines();
+    const lines = block.split('\\n'); const allBul = lines.every(l => /^\\s*-\\s+/.test(l));
+    const out = lines.map(l => allBul ? l.replace(/^\\s*-\\s+/, '') : (l.trim()? '- ' + l.replace(/^\\s+/, '') : l)).join('\\n');
+    editor.value = t.slice(0,ls) + out + t.slice(le);
+    editor.setSelectionRange(ls, ls + out.length); onEdit();
+  }
+
+  function toggleNumbers(){
+    const {ls, le, block, t} = getLines();
+    const lines = block.split('\\n'); const allNum = lines.every(l => /^\\s*\\d+\\.\\s+/.test(l));
+    const out = lines.map((l,i) => !l.trim()? l : (allNum ? l.replace(/^\\s*\\d+\\.\\s+/, '') : ((i+1)+'. ' + l.replace(/^\\s+/, '')))).join('\\n');
+    editor.value = t.slice(0,ls) + out + t.slice(le);
+    editor.setSelectionRange(ls, ls + out.length); onEdit();
+  }
+
+  function toggleTodo(){
+    const {ls, le, block, t} = getLines();
+    const lines = block.split('\\n'); const all = lines.every(l => /^\\s*\\[(?:\\s|\\u2713)\\]\\s+/.test(l));
+    const out = lines.map(l => { if (!l.trim()) return l; return all ? l.replace(/^\\s*\\[(?:\\s|\\u2713)\\]\\s+/, '') : '[ ] ' + l.replace(/^\\s+/, ''); }).join('\\n');
+    editor.value = t.slice(0,ls) + out + t.slice(le);
+    editor.setSelectionRange(ls, ls + out.length); onEdit();
+  }
+
+  function indentLines(n){
+    const {ls, le, block, t} = getLines();
+    const out = block.split('\\n').map(l => { if (!l.trim()) return l; if (n>0) return ' '.repeat(n)+l;
+      const rm=Math.min(Math.abs(n), l.match(/^\\s*/)[0].length); return l.slice(rm); }).join('\\n');
+    editor.value = t.slice(0,ls) + out + t.slice(le);
+    editor.setSelectionRange(ls, ls + out.length); onEdit();
+  }
+
+  function clearCurrentLine(){ const {ls, le, t} = getLines(); editor.value = t.slice(0,ls) + t.slice(le); editor.setSelectionRange(ls, ls); onEdit(); }
+  function insertAtCursor(s){ const {pre,post}=getSel(); const pos=pre.length+s.length; editor.value=pre+s+post; editor.setSelectionRange(pos,pos); onEdit(); }
+
+  function autoListContinuation(e){
+    if (e.key !== 'Enter') return;
+    const {s,t} = getSel();
+    const ls = t.lastIndexOf('\\n', Math.max(0,s-1)) + 1;
+    const line = t.slice(ls, s);
+    const num = line.match(/^\\s*(\\d+)\\.\\s+/), bullet = line.match(/^\\s*-\\s+/), todo = line.match(/^\\s*\\[(?:\\s|\\u2713)\\]\\s+/);
+    if (/^\\s*(?:\\d+\\.\\s+|-\\s+|\\[(?:\\s|\\u2713)\\]\\s+)$/.test(line.trim())){ e.preventDefault(); editor.setRangeText('\\n', s, s, 'end'); return; }
+    if (num){ e.preventDefault(); const next=(parseInt(num[1],10)+1)+'. '; editor.setRangeText('\\n'+next, s, s, 'end'); }
+    else if (bullet){ e.preventDefault(); editor.setRangeText('\\n- ', s, s, 'end'); }
+    else if (todo){ e.preventDefault(); editor.setRangeText('\\n[ ] ', s, s, 'end'); }
+  }
+
+  function renderSuggestions(){
+    const {t,s} = getSel(); const ctx=t.slice(0,s);
+    const tokens = ctx.split(/\\s+/).filter(Boolean);
+    const last = tokens[tokens.length-1] || '';
+    const last2 = tokens.slice(-2).join(' ').toLowerCase();
+    const learned = nextWordSuggestions(t, 2, tokens.slice(-2));
+    const bank = phraseBank.filter(p => p.toLowerCase().startsWith(last.toLowerCase()) || p.toLowerCase().startsWith(last2)).slice(0,3);
+    const chips = [...learned.slice(0,4), ...bank].slice(0,6);
+    sugg.innerHTML = '';
+    (chips.length ? chips : ['Key takeaway:', 'Action item:', 'In summary:', 'Next steps:']).forEach(c => addChip(c));
+    function addChip(text){ const el=document.createElement('button'); el.className='chip'; el.textContent=text; el.addEventListener('click', ()=>smartInsert(text)); sugg.appendChild(el); }
+  }
+  function smartInsert(snippet){ const {s,t}=getSel(); const before=t.slice(0,s); const needSpace=before && !/\\s$/.test(before); insertAtCursor((needSpace?' ':'')+snippet+' '); }
+  function nextWordSuggestions(full, order, ctxTokens){
+    const toks=(full||'').toLowerCase().split(/\\s+/).filter(Boolean); if (toks.length<order) return [];
+    const key = ctxTokens.map(x=>x.toLowerCase()).join(' '); const counts={};
+    for (let i=0; i<=toks.length-order-1; i++){ const gram=toks.slice(i,i+order).join(' '); if (gram===key){ const next=toks[i+order]; counts[next]=(counts[next]||0)+1; } }
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([w])=>w);
+  }
+
+  function openNotes(){
+    const modal=$('#notesModal'), listEl=$('#notesList');
+    const list=JSON.parse(localStorage.getItem(LS_LIST)||'[]'); listEl.innerHTML='';
+    if (!list.length){ listEl.innerHTML='<div class="row"><strong>No saved notes</strong><small>Tap New to start</small></div>'; }
+    else { list.forEach(n=>{ const row=document.createElement('div'); row.className='row';
+      row.innerHTML=`<strong>${escapeHtml(n.title||'Untitled')}</strong><small>${new Date(n.updatedAt).toLocaleString()}</small>`;
+      row.addEventListener('click', ()=>{ loadNote(n.id); modal.close(); }); listEl.appendChild(row); }); }
+    modal.showModal();
+  }
+
+  function loadNote(id){
+    persistCurrent();
+    const bucket=JSON.parse(localStorage.getItem('mc_bucket_'+id)||'null');
+    const stash=JSON.parse(localStorage.getItem(LS_CUR)||'null');
+    if (bucket && bucket.content) editor.value=bucket.content; else if (stash && stash.id===id) editor.value=stash.content||''; else editor.value='';
+    currentId=id; refreshTitle(); renderSuggestions();
+  }
+  function onNewNote(){
+    persistCurrent(); const old=JSON.parse(localStorage.getItem(LS_CUR)||'null');
+    if (old && old.id){ localStorage.setItem('mc_bucket_'+old.id, JSON.stringify(old)); }
+    currentId=makeId(); editor.value=''; refreshTitle(); renderSuggestions(); scheduleSave(); editor.focus();
+  }
+  function onDeleteNote(){
+    const list=JSON.parse(localStorage.getItem(LS_LIST)||'[]'); const idx=list.findIndex(x=>x.id===currentId);
+    if (idx>=0){ list.splice(idx,1); localStorage.setItem(LS_LIST, JSON.stringify(list)); }
+    localStorage.removeItem('mc_bucket_'+currentId);
+    currentId=makeId(); editor.value=''; refreshTitle(); renderSuggestions(); persistCurrent(); $('#notesModal').close();
+  }
+
+  async function onShare(){
+    persistCurrent();
+    const md=editor.value; const title=firstNonEmptyLine(md)||'MindChip note'; const file=sanitize(title)+'.md';
+    if (navigator.share && navigator.canShare && navigator.canShare({text:md})){ try{ await navigator.share({title, text:md}); }catch(e){} }
+    else { const blob=new Blob([md], {type:'text/markdown'}); const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=file; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); alert('Exported as '+file); }
+  }
+
+  function sanitize(s){ return s.replace(/[\\/:*?"<>|]/g,' ').trim().slice(0,80)||'note'; }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function shadowSave(){ const cur={id:currentId, content:editor.value, updatedAt:Date.now()}; localStorage.setItem('mc_bucket_'+currentId, JSON.stringify(cur)); }
+</script>
+</body>
+</html>
